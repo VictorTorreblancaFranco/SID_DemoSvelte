@@ -28,9 +28,6 @@ header { display: flex; align-items: center; justify-content: space-between; }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
 .brand > span { width: 40px; height: 40px; display: grid; place-items: center; background: #1d4ed8; color: white; border-radius: 13px 13px 13px 5px; font-size: 22px; font-weight: 800; }
 .brand strong { font-size: 21px; }
-.course { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
-.course small { color: #1d4ed8; font-size: 9px; letter-spacing: 1.2px; font-weight: 800; }
-.course span { color: #64748b; font-size: 12px; }
 .hero { text-align: center; padding: 60px 20px 30px; }
 .eyebrow { display: inline-flex; align-items: center; gap: 8px; color: #1d4ed8; background: #eaf0ff; border-radius: 999px; padding: 7px 11px; font-size: 11px; font-weight: 700; }
 .eyebrow i { width: 7px; height: 7px; border-radius: 50%; background: #10b981; box-shadow: 0 0 0 4px rgba(16, 185, 129, .12); }
@@ -85,8 +82,6 @@ header { display: flex; align-items: center; justify-content: space-between; }
 .details > div > span { display: block; color: #64748b; font-size: 9px; margin-top: 3px; }
 .security-note { max-width: 520px; margin: 15px auto 0; padding: 13px 15px; display: flex; gap: 10px; border-radius: 15px; background: #ecfdf5; color: #065f46; }
 .security-note p { margin: 0; font-size: 10px; line-height: 1.55; }
-footer { display: flex; justify-content: center; align-items: center; gap: 9px; color: #94a3b8; font-size: 9px; padding-top: 24px; }
-footer i { width: 3px; height: 3px; background: #cbd5e1; border-radius: 50%; }
 .toast { position: fixed; left: 50%; bottom: 28px; z-index: 20; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; min-width: 190px; justify-content: center; padding: 12px 16px; border-radius: 13px; color: white; background: #0f172a; box-shadow: 0 14px 35px rgba(15, 23, 42, .24); font-size: 12px; font-weight: 700; animation: toast-in .2s ease-out; }
 .toast > span { width: 19px; height: 19px; display: grid; place-items: center; border-radius: 50%; color: #065f46; background: #a7f3d0; }
 .toast.error-toast { background: #991b1b; }

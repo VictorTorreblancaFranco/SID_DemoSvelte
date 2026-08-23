@@ -212,10 +212,6 @@
       <span>K</span>
       <strong>Kipo</strong>
     </a>
-    <div class="course">
-      <small>SISTEMAS DISTRIBUIDOS</small>
-      <span>Actividad práctica</span>
-    </div>
   </header>
 
   <section class="hero">
@@ -287,10 +283,6 @@
     <span>🛡️</span>
     <p><strong>Kipo nunca accede a tu clave privada.</strong><br />Pali Wallet solo comparte la dirección autorizada y firma las solicitudes que tú apruebas.</p>
   </aside>
-
-  <footer>
-    <span>Kipo</span><i></i><span>Sistemas Distribuidos</span>
-  </footer>
 
   {#if toastMessage}
     <div class="toast" class:error-toast={toastType === 'error'} role="status" aria-live="polite">
