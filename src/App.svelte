@@ -340,7 +340,7 @@
       </div>
 
       <button class="primary" onclick={connectWallet} disabled={status === 'connecting'}>
-        {status === 'connecting' ? 'Esperando confirmación…' : 'Conectar Pali Wallet'}
+        {status === 'connecting' ? 'Esperando confirmación…' : 'Conectar billetera'}
       </button>
 
       <div class="compatibility">
