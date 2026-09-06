@@ -17,8 +17,12 @@
   let toastType: 'success' | 'error' = 'success'
   let toastTimer: ReturnType<typeof setTimeout> | undefined
   let manuallyDisconnected = false
+  let walletName = 'Pali Wallet'
+  let isSwitchingNetwork = false
 
   const disconnectedKey = 'kipo-wallet-disconnected'
+  const testnetChainId = '57057'
+  const testnetChainIdHex = '0xdee1'
 
   const symbols: Record<string, string> = {
     '1': 'ETH',
@@ -26,6 +30,8 @@
     '137': 'POL',
     '570': 'SYS',
     '5700': 'tSYS',
+    '57000': 'tSYS',
+    '57057': 'SYS',
     '42161': 'ETH',
   }
 
@@ -35,15 +41,23 @@
     '137': 'Polygon',
     '570': 'Rollux Mainnet',
     '5700': 'Syscoin Tanenbaum Testnet',
+    '57000': 'Rollux Tanenbaum Testnet',
+    '57057': 'zkSYS Genesis Testnet',
     '42161': 'Arbitrum One',
   }
 
   function explainError(error: unknown) {
     const walletError = error as { code?: number; message?: string }
 
-    if (walletError.code === 4001) return 'La conexión fue rechazada desde Pali Wallet.'
-    if (walletError.code === -32002) return 'Pali Wallet ya tiene una solicitud pendiente. Abre la extensión.'
-    return walletError.message || 'No pudimos conectarnos. Revisa que Pali Wallet esté desbloqueada.'
+    if (walletError.code === 4001) return `La solicitud fue rechazada desde ${walletName}.`
+    if (walletError.code === -32002) return `${walletName} ya tiene una solicitud pendiente. Abre la extensión.`
+    return walletError.message || `No pudimos conectarnos. Revisa que ${walletName} esté desbloqueada.`
+  }
+
+  function detectWalletName(provider: EvmWalletProvider) {
+    if (provider.isPali || (window.pali && !provider.providers?.length)) return 'Pali Wallet'
+    if (provider.isMetaMask) return 'MetaMask'
+    return 'Billetera EVM'
   }
 
   function showToast(message: string, type: 'success' | 'error' = 'success') {
@@ -56,7 +70,7 @@
   }
 
   async function readWallet(account?: string) {
-    if (!window.ethereum) throw new Error('Pali Wallet no está instalada en este navegador.')
+    if (!window.ethereum) throw new Error('No se encontró Pali Wallet ni MetaMask en este navegador.')
 
     const provider = new BrowserProvider(window.ethereum)
     const accounts = account
@@ -75,6 +89,7 @@
     ])
 
     const currentChainId = network.chainId.toString()
+    walletName = detectWalletName(window.ethereum)
     address = currentAddress
     balance = Number(formatEther(balanceWei)).toLocaleString('es-PE', {
       minimumFractionDigits: 4,
@@ -90,7 +105,7 @@
   async function connectWallet() {
     if (!window.ethereum) {
       status = 'error'
-      errorMessage = 'Pali Wallet no está instalada. Instálala y recarga esta página.'
+      errorMessage = 'No se encontró una billetera. Instala Pali Wallet o MetaMask y recarga esta página.'
       return
     }
 
@@ -123,11 +138,52 @@
     }
   }
 
+  async function switchToTestnet() {
+    if (!window.ethereum) return
+    isSwitchingNetwork = true
+
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: testnetChainIdHex }],
+      })
+      await readWallet(address)
+      showToast('Testnet zkSYS seleccionada')
+    } catch (error) {
+      const walletError = error as { code?: number }
+
+      if (walletError.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: testnetChainIdHex,
+              chainName: 'zkSYS Genesis Testnet',
+              nativeCurrency: { name: 'Syscoin', symbol: 'SYS', decimals: 18 },
+              rpcUrls: ['https://rpc-zk.tanenbaum.io/'],
+              blockExplorerUrls: ['https://explorer-zk.tanenbaum.io/'],
+            }],
+          })
+          await readWallet(address)
+          showToast('Testnet zkSYS agregada')
+        } catch (addError) {
+          showToast(explainError(addError), 'error')
+        }
+      } else {
+        showToast(explainError(error), 'error')
+      }
+    } finally {
+      isSwitchingNetwork = false
+    }
+  }
+
   function clearWalletView(remember = true) {
     address = ''
     balance = '0.0000'
     chainId = ''
     networkName = '—'
+    currencySymbol = 'SYS'
+    walletName = 'Pali Wallet'
     status = 'idle'
     errorMessage = ''
     manuallyDisconnected = remember
@@ -203,7 +259,7 @@
 </script>
 
 <svelte:head>
-  <title>Kipo · Pali Wallet</title>
+  <title>Kipo · Conectar billetera</title>
 </svelte:head>
 
 <main>
@@ -216,16 +272,16 @@
 
   <section class="hero">
     <div class="eyebrow"><i></i> Mi billetera</div>
-    <h1>Conecta tu Pali Wallet</h1>
-    <p>Consulta la dirección y el saldo de tu cuenta.</p>
+    <h1>Conecta tu billetera</h1>
+    <p>Consulta la dirección, el saldo y la red seleccionada.</p>
   </section>
 
   <section class="wallet-card" class:connected={status === 'connected'}>
     <div class="card-top">
-      <div class="pali-logo">P</div>
+      <div class="pali-logo">{walletName === 'MetaMask' ? 'M' : 'P'}</div>
       <div>
         <small>BILLETERA</small>
-        <h2>Pali Wallet</h2>
+        <h2>{walletName}</h2>
       </div>
       <span class="status" class:online={status === 'connected'}>
         <i></i>{status === 'connected' ? 'Conectada' : 'Sin conectar'}
@@ -255,6 +311,20 @@
         </div>
       </div>
 
+      <div class="network-check" class:verified={chainId === testnetChainId} class:different={chainId !== testnetChainId}>
+        <div class="network-check-icon">{chainId === testnetChainId ? '✓' : '!'}</div>
+        <div>
+          <small>VERIFICACIÓN DE TESTNET</small>
+          <strong>{chainId === testnetChainId ? 'Testnet correcta' : 'Red diferente seleccionada'}</strong>
+          <span>zkSYS Genesis está mapeada con el Chain ID {testnetChainId}.</span>
+        </div>
+        {#if chainId !== testnetChainId}
+          <button onclick={switchToTestnet} disabled={isSwitchingNetwork}>
+            {isSwitchingNetwork ? 'Cambiando…' : 'Cambiar'}
+          </button>
+        {/if}
+      </div>
+
       <button class="secondary" onclick={disconnectWallet}>Desconectar billetera</button>
     {:else}
       <div class="connect-illustration" aria-hidden="true">
@@ -273,6 +343,11 @@
         {status === 'connecting' ? 'Esperando confirmación…' : 'Conectar Pali Wallet'}
       </button>
 
+      <div class="compatibility">
+        <span>También compatible con MetaMask</span>
+        <small>Testnet configurada: zkSYS Genesis · Chain ID {testnetChainId}</small>
+      </div>
+
       {#if status === 'error'}
         <div class="error" role="alert">{errorMessage}</div>
       {/if}
@@ -281,7 +356,7 @@
 
   <aside class="security-note">
     <span>🛡️</span>
-    <p><strong>Kipo nunca accede a tu clave privada.</strong><br />Pali Wallet solo comparte la dirección autorizada y firma las solicitudes que tú apruebas.</p>
+    <p><strong>Kipo nunca accede a tu clave privada.</strong><br />La billetera solo comparte la dirección autorizada y firma las solicitudes que tú apruebas.</p>
   </aside>
 
   {#if toastMessage}
