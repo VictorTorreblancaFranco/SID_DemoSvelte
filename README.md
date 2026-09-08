@@ -4,8 +4,8 @@ Aplicación web desarrollada con Svelte que permite conectar Pali Wallet o MetaM
 
 ## Funciones
 
-- Conexión con Pali Wallet mediante `window.ethereum`.
-- Compatibilidad con MetaMask como billetera EVM adicional.
+- Selección directa entre Pali Wallet y MetaMask.
+- Conexión mediante proveedores EVM inyectados en el navegador.
 - Lectura de la dirección pública.
 - Consulta y actualización del saldo.
 - Lectura del Chain ID de la red seleccionada.

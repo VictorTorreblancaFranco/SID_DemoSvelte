@@ -10,6 +10,18 @@ interface EvmWalletProvider {
   isMetaMask?: boolean
 }
 
+interface Eip6963ProviderInfo {
+  uuid: string
+  name: string
+  icon: string
+  rdns: string
+}
+
+interface Eip6963ProviderDetail {
+  info: Eip6963ProviderInfo
+  provider: EvmWalletProvider
+}
+
 interface Window {
   ethereum?: EvmWalletProvider
   pali?: unknown

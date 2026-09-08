@@ -3,6 +3,7 @@
   import { onMount } from 'svelte'
 
   type Status = 'idle' | 'connecting' | 'connected' | 'error'
+  type WalletChoice = 'pali' | 'metamask'
 
   let status: Status = 'idle'
   let address = ''
@@ -17,8 +18,12 @@
   let toastType: 'success' | 'error' = 'success'
   let toastTimer: ReturnType<typeof setTimeout> | undefined
   let manuallyDisconnected = false
-  let walletName = 'Pali Wallet'
+  let walletName = 'Elige una opción'
   let isSwitchingNetwork = false
+  let connectingWallet: WalletChoice | null = null
+  let activeProvider: EvmWalletProvider | undefined
+  let announcedWallets: Eip6963ProviderDetail[] = []
+  let removeProviderListeners: (() => void) | undefined
 
   const disconnectedKey = 'kipo-wallet-disconnected'
   const testnetChainId = '57057'
@@ -54,10 +59,38 @@
     return walletError.message || `No pudimos conectarnos. Revisa que ${walletName} esté desbloqueada.`
   }
 
-  function detectWalletName(provider: EvmWalletProvider) {
-    if (provider.isPali || (window.pali && !provider.providers?.length)) return 'Pali Wallet'
-    if (provider.isMetaMask) return 'MetaMask'
-    return 'Billetera EVM'
+  function isWallet(detail: Eip6963ProviderDetail, choice: WalletChoice) {
+    const identity = `${detail.info.name} ${detail.info.rdns}`.toLowerCase()
+    return choice === 'pali' ? identity.includes('pali') : identity.includes('metamask')
+  }
+
+  function findWalletProvider(choice: WalletChoice) {
+    const announced = announcedWallets.find((wallet) => isWallet(wallet, choice))
+    if (announced) return announced.provider
+
+    const injected = window.ethereum
+    if (!injected) return undefined
+
+    const providers = injected.providers?.length ? injected.providers : [injected]
+
+    if (choice === 'pali') {
+      const identified = providers.find((provider) => provider.isPali)
+      if (identified) return identified
+
+      if (window.pali) {
+        const metamaskProviders = announcedWallets
+          .filter((wallet) => isWallet(wallet, 'metamask'))
+          .map((wallet) => wallet.provider)
+        return providers.find((provider) => !metamaskProviders.includes(provider)) || injected
+      }
+    }
+
+    if (choice === 'metamask') {
+      if (!window.pali && injected.isMetaMask) return injected
+      return providers.find((provider) => provider.isMetaMask && !provider.isPali)
+    }
+
+    return undefined
   }
 
   function showToast(message: string, type: 'success' | 'error' = 'success') {
@@ -69,13 +102,40 @@
     }, 2500)
   }
 
-  async function readWallet(account?: string) {
-    if (!window.ethereum) throw new Error('No se encontró Pali Wallet ni MetaMask en este navegador.')
+  function listenToProvider(provider: EvmWalletProvider) {
+    removeProviderListeners?.()
 
-    const provider = new BrowserProvider(window.ethereum)
+    const handleAccountsChanged = (...args: unknown[]) => {
+      const accounts = args[0] as string[]
+      if (!accounts?.length) clearWalletView(false)
+      else if (!manuallyDisconnected) readWallet(accounts[0]).catch((error) => {
+        errorMessage = explainError(error)
+        status = 'error'
+      })
+    }
+
+    const handleChainChanged = () => {
+      if (address && !manuallyDisconnected) readWallet(address).catch((error) => {
+        errorMessage = explainError(error)
+        status = 'error'
+      })
+    }
+
+    provider.on?.('accountsChanged', handleAccountsChanged)
+    provider.on?.('chainChanged', handleChainChanged)
+    removeProviderListeners = () => {
+      provider.removeListener?.('accountsChanged', handleAccountsChanged)
+      provider.removeListener?.('chainChanged', handleChainChanged)
+    }
+  }
+
+  async function readWallet(account?: string) {
+    if (!activeProvider) throw new Error('Primero selecciona una billetera.')
+
+    const provider = new BrowserProvider(activeProvider)
     const accounts = account
       ? [account]
-      : (await window.ethereum.request({ method: 'eth_accounts' }) as string[])
+      : (await activeProvider.request({ method: 'eth_accounts' }) as string[])
 
     if (!accounts.length) {
       clearWalletView(false)
@@ -89,7 +149,6 @@
     ])
 
     const currentChainId = network.chainId.toString()
-    walletName = detectWalletName(window.ethereum)
     address = currentAddress
     balance = Number(formatEther(balanceWei)).toLocaleString('es-PE', {
       minimumFractionDigits: 4,
@@ -102,24 +161,33 @@
     errorMessage = ''
   }
 
-  async function connectWallet() {
-    if (!window.ethereum) {
+  async function connectWallet(choice: WalletChoice) {
+    walletName = choice === 'pali' ? 'Pali Wallet' : 'MetaMask'
+    connectingWallet = choice
+    const selectedProvider = findWalletProvider(choice)
+
+    if (!selectedProvider) {
       status = 'error'
-      errorMessage = 'No se encontró una billetera. Instala Pali Wallet o MetaMask y recarga esta página.'
+      errorMessage = `No se encontró ${walletName}. Revisa que la extensión esté instalada, activa y luego recarga la página.`
+      connectingWallet = null
       return
     }
 
     status = 'connecting'
     errorMessage = ''
+    activeProvider = selectedProvider
 
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' }) as string[]
+      const accounts = await selectedProvider.request({ method: 'eth_requestAccounts' }) as string[]
       manuallyDisconnected = false
       localStorage.removeItem(disconnectedKey)
+      listenToProvider(selectedProvider)
       await readWallet(accounts[0])
     } catch (error) {
       status = 'error'
       errorMessage = explainError(error)
+    } finally {
+      connectingWallet = null
     }
   }
 
@@ -139,11 +207,11 @@
   }
 
   async function switchToTestnet() {
-    if (!window.ethereum) return
+    if (!activeProvider) return
     isSwitchingNetwork = true
 
     try {
-      await window.ethereum.request({
+      await activeProvider.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: testnetChainIdHex }],
       })
@@ -154,7 +222,7 @@
 
       if (walletError.code === 4902) {
         try {
-          await window.ethereum.request({
+          await activeProvider.request({
             method: 'wallet_addEthereumChain',
             params: [{
               chainId: testnetChainIdHex,
@@ -183,7 +251,7 @@
     chainId = ''
     networkName = '—'
     currencySymbol = 'SYS'
-    walletName = 'Pali Wallet'
+    walletName = 'Elige una opción'
     status = 'idle'
     errorMessage = ''
     manuallyDisconnected = remember
@@ -193,9 +261,9 @@
   }
 
   async function disconnectWallet() {
-    if (window.ethereum) {
+    if (activeProvider) {
       try {
-        await window.ethereum.request({
+        await activeProvider.request({
           method: 'wallet_revokePermissions',
           params: [{ eth_accounts: {} }],
         })
@@ -204,7 +272,10 @@
       }
     }
 
+    removeProviderListeners?.()
+    removeProviderListeners = undefined
     clearWalletView(true)
+    activeProvider = undefined
     showToast('Billetera desconectada')
   }
 
@@ -226,34 +297,20 @@
   }
 
   onMount(() => {
-    const provider = window.ethereum
-    if (!provider) return
-
     manuallyDisconnected = localStorage.getItem(disconnectedKey) === 'true'
-    if (!manuallyDisconnected) readWallet().catch(() => clearWalletView(false))
 
-    const handleAccountsChanged = (...args: unknown[]) => {
-      const accounts = args[0] as string[]
-      if (!accounts?.length) clearWalletView(false)
-      else if (!manuallyDisconnected) readWallet(accounts[0]).catch((error) => {
-        errorMessage = explainError(error)
-        status = 'error'
-      })
+    const handleProviderAnnouncement = (event: Event) => {
+      const detail = (event as CustomEvent<Eip6963ProviderDetail>).detail
+      if (!detail || announcedWallets.some((wallet) => wallet.info.uuid === detail.info.uuid)) return
+      announcedWallets = [...announcedWallets, detail]
     }
 
-    const handleChainChanged = () => {
-      if (address && !manuallyDisconnected) readWallet(address).catch((error) => {
-        errorMessage = explainError(error)
-        status = 'error'
-      })
-    }
-
-    provider.on?.('accountsChanged', handleAccountsChanged)
-    provider.on?.('chainChanged', handleChainChanged)
+    window.addEventListener('eip6963:announceProvider', handleProviderAnnouncement)
+    window.dispatchEvent(new Event('eip6963:requestProvider'))
 
     return () => {
-      provider.removeListener?.('accountsChanged', handleAccountsChanged)
-      provider.removeListener?.('chainChanged', handleChainChanged)
+      window.removeEventListener('eip6963:announceProvider', handleProviderAnnouncement)
+      removeProviderListeners?.()
     }
   })
 </script>
@@ -278,7 +335,7 @@
 
   <section class="wallet-card" class:connected={status === 'connected'}>
     <div class="card-top">
-      <div class="pali-logo">{walletName === 'MetaMask' ? 'M' : 'P'}</div>
+      <div class="pali-logo">{walletName === 'MetaMask' ? 'M' : walletName === 'Pali Wallet' ? 'P' : 'K'}</div>
       <div>
         <small>BILLETERA</small>
         <h2>{walletName}</h2>
@@ -339,13 +396,15 @@
         <span>💰 Lectura del saldo</span>
       </div>
 
-      <button class="primary" onclick={connectWallet} disabled={status === 'connecting'}>
-        {status === 'connecting' ? 'Esperando confirmación…' : 'Conectar billetera'}
-      </button>
-
-      <div class="compatibility">
-        <span>También compatible con MetaMask</span>
-        <small>Testnet configurada: zkSYS Genesis · Chain ID {testnetChainId}</small>
+      <div class="wallet-options">
+        <button class="wallet-option pali" onclick={() => connectWallet('pali')} disabled={status === 'connecting'}>
+          <b>P</b>
+          <span>{connectingWallet === 'pali' ? 'Abriendo…' : 'Pali Wallet'}</span>
+        </button>
+        <button class="wallet-option metamask" onclick={() => connectWallet('metamask')} disabled={status === 'connecting'}>
+          <b>M</b>
+          <span>{connectingWallet === 'metamask' ? 'Abriendo…' : 'MetaMask'}</span>
+        </button>
       </div>
 
       {#if status === 'error'}
